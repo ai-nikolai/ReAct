@@ -7,16 +7,24 @@
 
 
 import os
-import openai
+import anthropic
 import sys
 
 
+USE_GPT = True
+
 GPT_MODEL = "gpt-3.5-turbo-1106"
-LLM_TYPE="CHAT"
+
 # GPT_MODEL = "gpt-3.5-turbo-instruct"
-# LLM_TYPE="NORMAL"
+LLM_TYPE="NORMAL"
+
+# GPT_MODEL = "gpt-4-0613"
+LLM_TYPE="CHAT"
+
 MAX_PROMPT_LENGTH=6400
 
+
+CLAUDE_MODEL="claude-3-5-sonnet-latest"
 
 
 # LLM_TYPE="CHAT"
@@ -24,12 +32,23 @@ MAX_PROMPT_LENGTH=6400
 # GPT_MODEL = "gpt-4o"
 # GPT_MODEL = "gpt-4o-mini"
 # MAX_PROMPT_LENGTH=128000
- 
-openai.api_key = os.environ["OPENAI_API_KEY"]
-client = openai.OpenAI()
+
+if USE_GPT:
+  print(f"USING OPENAI:{GPT_MODEL} of type: {LLM_TYPE}")
+  import openai
+  openai.api_key = os.environ["OPENAI_API_KEY"]
+  client = openai.OpenAI()
+  MODEL = GPT_MODEL
+
+else:
+  print(f"USING ANTHROPIC: {CLAUDE_MODEL}")
+  import anthropic
+  client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+  LLM_TYPE="TROPIC"
+  MODEL = CLAUDE_MODEL
 
 def llm(prompt, stop=["\n"]):
-    MODEL = GPT_MODEL
+    # MODEL = MODEL
     # response = openai.Completion.create(
     response = client.completions.create(
       # model="text-davinci-002",
@@ -47,7 +66,7 @@ def llm(prompt, stop=["\n"]):
 
 
 def llm_chat(prompt, stop=["\n"]):
-    MODEL = GPT_MODEL
+    # MODEL = MODEL
     # MODEL = "gpt-4-turbo-preview"
     chat_prompt = [
             {
@@ -68,12 +87,33 @@ def llm_chat(prompt, stop=["\n"]):
     # return response["choices"][0]["text"]
     return response.choices[0].message.content
 
+def llm_tropic(prompt, stop=["\n"]):
+  chat_prompt = [
+          {
+              "role": "user", 
+              "content": prompt
+          }
+      ]
+  response = client.messages.create(
+    model=MODEL,
+    max_tokens = 500,
+    temperature = 0,
+    top_p=1,
+    # frequency_penalty=0.0,
+    # presence_penalty=0.0,
+    stop_sequences=stop,
+    messages = chat_prompt
+  )
+  return response.content[0].text
+
 # In[2]:
 
 if LLM_TYPE=="NORMAL":
   call_llm = llm
 elif LLM_TYPE=="CHAT":
   call_llm = llm_chat
+elif LLM_TYPE=="TROPIC":
+  call_llm = llm_tropic
 
 
 
@@ -256,22 +296,57 @@ env = webshopEnv()
 
 # # ReAct
 
+START="```start"
+END="```end"
+
+# START=""
+# END=""
 # In[3]:
-system_prompt_gpt4o="""
+system_prompt_gpt4o=f"""
 You are an intelligent WebShop assistant.
-Your job is to buy an item that matches the instruction. The environment gives you an "Observation:", you need to produce the correct output at every turn.
+Your job is to buy an item that matches the instruction as close as possible. You only have 15 steps to do so.
+The environment gives you an ```Observation```, you need to produce the correct output at every turn. 
+Make sure only to use the functions availble in the observations, follow the syntax of the example.
 
 Here is an example interaction:
-WebShop
+{START}
+WebShop"""
+
+
+system_prompt_gpt4o=f"""
+You are an intelligent WebShop assistant.
+Your job is to interact with the environment using the `[]` buttons only. 
+You have 15 interactions to buy an item that is closest to the instruction.
+
+Here is an example interaction:
+{START}
+WebShop"""
+
+
+system_prompt_gpt4o=f"""
+{START}
+WebShop"""
+
+OUTRO="""Hints:
+1. When you receive the observation `Invalid action!`, this means you did not perform a valid action `[ACTION]` for that page! (Not all actions are availbale on all pages!)
+2. Remember in 15 or less moves you must buy an item or you get a score of zero.
+
 """
 
+OUTRO=""
+
+
 # trivial search & item, choose option
-prompt1 = f"""{system_prompt_gpt4o}
+prompt1 = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
-[Search]  
-
+[Search]
+{END}
+{START}
 Action: search[3 ounce bright citrus deodorant sensitive skin]
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -285,11 +360,17 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Action: think[B078GWRC1J and B078GTKVXY are bright citrus deodorant less then 50 dollars. I can check B078GWRC1J first.]
+{END}
+{START}
 Observation: OK.
-
+{END}
+{START}
 Action: click[B078GWRC1J]
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -302,17 +383,29 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Action: think[For 3 ounce bottle of bright citrus deodorant for sensitive skin, the item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.]
+{END}
+{START}
 Observation: OK.
-
+{END}
+{START}
 Action: click[bright citrus]
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Action: click[3 ounce (pack of 1)]
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 
@@ -320,12 +413,16 @@ Action: click[Buy Now]
 
 
 # trivial search & item, choose option
-prompt1_actonly = f"""{system_prompt_gpt4o}
+prompt1_actonly = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Action: search[3 ounce bright citrus deodorant sensitive skin]
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -339,8 +436,11 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Action: click[B078GWRC1J]
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -353,25 +453,35 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Action: click[bright citrus]
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Action: click[3 ounce (pack of 1)]
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 # trivial search & item, choose option
-stateact_prompt_ta = f"""{system_prompt_gpt4o}
+stateact_prompt_ta = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Thought: None
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -385,10 +495,12 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Thought: B078GWRC1J and B078GTKVXY are bright citrus deodorant less then 50 dollars. I can check B078GWRC1J first.
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -401,33 +513,43 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Thought: For 3 ounce bottle of bright citrus deodorant for sensitive skin, the item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Thought: None
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Thought: None
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 
 # trivial search & item, choose option
-stateact_prompt_gsta = f"""{system_prompt_gpt4o}
+stateact_prompt_gsta = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Search Home Page
 Thought: None
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -441,12 +563,14 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Search Results Page, page 1
 Thought: B078GWRC1J and B078GTKVXY are bright citrus deodorant less then 50 dollars. I can check B078GWRC1J first.
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -459,38 +583,48 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item Page, B078GWRC1J
 Thought: For 3 ounce bottle of bright citrus deodorant for sensitive skin, the item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item Page, B078GWRC1J
 Thought: None
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item Page, B078GWRC1J
 Thought: None
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 
 # trivial search & item, choose option
-stateact_prompt_sta = f"""{system_prompt_gpt4o}
+stateact_prompt_sta = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Current Location: Search Home Page
 Thought: None
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -504,11 +638,13 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Current Location: Search Results Page, page 1
 Thought: B078GWRC1J and B078GTKVXY are bright citrus deodorant less then 50 dollars. I can check B078GWRC1J first.
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -521,36 +657,46 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Thought: For 3 ounce bottle of bright citrus deodorant for sensitive skin, the item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Thought: None
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Thought: None
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 
 # trivial search & item, choose option
-stateact_prompt_ssta = f"""{system_prompt_gpt4o}
+stateact_prompt_ssta = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Current Location: Search Home Page
 Current Selection: None
 Thought: None
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -564,77 +710,14 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
-Current Location: Search Results Page, page 1
-Current Selection: None
-Thought: B078GWRC1J and B078GTKVXY are bright citrus deodorant less then 50 dollars. I can check B078GWRC1J first.
-Action: click[B078GWRC1J]
-
-Observation: 
-[Back to Search] 
-[< Prev] 
-scent [assorted scents][bright citrus][calming lavender][ginger fresh][simply non-scents]
-size [travel set (4-pack)][3 ounce (pack of 1)][3-ounce (2-pack)]
-Bright Citrus Deodorant by Earth Mama | Natural and Safe for Sensitive Skin, Pregnancy and Breastfeeding, Contains Organic Calendula 3-Ounce 
-Price: $10.99 
-Rating: N.A. 
-[Description] 
-[Features] 
-[Reviews] 
-[Buy Now]  
-
-Current Location: Item B078GWRC1J Page
-Current Selection: None
-Thought: For 3 ounce bottle of bright citrus deodorant for sensitive skin, the item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
-Action: click[bright citrus]
-
-Observation: You have clicked bright citrus. 
-
-Current Location: Item B078GWRC1J Page
-Current Selection: bright citrus
-Thought: None
-Action: click[3 ounce (pack of 1)]
-
-Observation: You have clicked 3 ounce (pack of 1). 
-
-Current Location: Item B078GWRC1J Page
-Current Selection: bright citrus, 3 ounce (pack of 1)
-Thought: None
-Action: click[Buy Now]
-"""
-
-# trivial search & item, choose option
-stateact_prompt_gssta = f"""{system_prompt_gpt4o}
-Instruction:  
-i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
-[Search]  
-
-Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
-Current Location: Search Home Page
-Current Selection: None
-Thought: None
-Action: search[3 ounce bright citrus deodorant sensitive skin]
-
-Observation: 
-[Back to Search] 
-Page 1 (Total results: 50) 
-[Next >] 
-[B078GWRC1J] 
-Bright Citrus Deodorant by Earth Mama | Natural and Safe for Sensitive Skin, Pregnancy and Breastfeeding, Contains Organic Calendula 3-Ounce 
-$10.99 
-[B078GTKVXY] 
-Ginger Fresh Deodorant by Earth Mama | Natural and Safe for Sensitive Skin, Pregnancy and Breastfeeding, Contains Organic Calendula 3-Ounce 
-$10.99 
-[B08KBVJ4XN] 
-Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
-$15.95  
-
-Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
+{END}
+{START}
 Current Location: Search Results Page, page 1
 Current Selection: None
 Thought: B078GWRC1J and B078GTKVXY are bright citrus deodorant less then 50 dollars. I can check B078GWRC1J first.
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -647,41 +730,128 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
+{END}
+{START}
+Current Location: Item B078GWRC1J Page
+Current Selection: None
+Thought: For 3 ounce bottle of bright citrus deodorant for sensitive skin, the item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
+Action: click[bright citrus]
+{END}
+{START}
+Observation: You have clicked bright citrus. 
+{END}
+{START}
+Current Location: Item B078GWRC1J Page
+Current Selection: bright citrus
+Thought: None
+Action: click[3 ounce (pack of 1)]
+{END}
+{START}
+Observation: You have clicked 3 ounce (pack of 1). 
+{END}
+{START}
+Current Location: Item B078GWRC1J Page
+Current Selection: bright citrus, 3 ounce (pack of 1)
+Thought: None
+Action: click[Buy Now]
+{END}
+{OUTRO}
+"""
 
+# trivial search & item, choose option
+stateact_prompt_gssta = \
+f"""{system_prompt_gpt4o}
+Instruction:  
+i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
+[Search]  
+{END}
+{START}
+Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
+Current Location: Search Home Page
+Current Selection: None
+Thought: None
+Action: search[3 ounce bright citrus deodorant sensitive skin]
+{END}
+{START}
+Observation: 
+[Back to Search] 
+Page 1 (Total results: 50) 
+[Next >] 
+[B078GWRC1J] 
+Bright Citrus Deodorant by Earth Mama | Natural and Safe for Sensitive Skin, Pregnancy and Breastfeeding, Contains Organic Calendula 3-Ounce 
+$10.99 
+[B078GTKVXY] 
+Ginger Fresh Deodorant by Earth Mama | Natural and Safe for Sensitive Skin, Pregnancy and Breastfeeding, Contains Organic Calendula 3-Ounce 
+$10.99 
+[B08KBVJ4XN] 
+Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
+$15.95  
+{END}
+{START}
+Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
+Current Location: Search Results Page, page 1
+Current Selection: None
+Thought: B078GWRC1J and B078GTKVXY are bright citrus deodorant less then 50 dollars. I can check B078GWRC1J first.
+Action: click[B078GWRC1J]
+{END}
+{START}
+Observation: 
+[Back to Search] 
+[< Prev] 
+scent [assorted scents][bright citrus][calming lavender][ginger fresh][simply non-scents]
+size [travel set (4-pack)][3 ounce (pack of 1)][3-ounce (2-pack)]
+Bright Citrus Deodorant by Earth Mama | Natural and Safe for Sensitive Skin, Pregnancy and Breastfeeding, Contains Organic Calendula 3-Ounce 
+Price: $10.99 
+Rating: N.A. 
+[Description] 
+[Features] 
+[Reviews] 
+[Buy Now]  
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: None
 Thought: For 3 ounce bottle of bright citrus deodorant for sensitive skin, the item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus
 Thought: None
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus, 3 ounce (pack of 1)
 Thought: None
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 
 # trivial search & item, choose option
-stateact_prompt_ssa = f"""{system_prompt_gpt4o}
+stateact_prompt_ssa = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Current Location: Search Home Page
 Current Selection: None
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -695,11 +865,13 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Current Location: Search Results Page, page 1
 Current Selection: None
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -712,33 +884,43 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Current Selection: None
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus, 3 ounce (pack of 1)
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 
 # trivial search & item, choose option
-stateact_prompt_a = f"""{system_prompt_gpt4o}
+stateact_prompt_a = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -752,9 +934,11 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -767,30 +951,40 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 
 # trivial search & item, choose option
-stateact_prompt_gssa = f"""{system_prompt_gpt4o}
+stateact_prompt_gssa = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Search Home Page
 Current Selection: None
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -804,12 +998,14 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Search Results Page, page 1
 Current Selection: None
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -822,36 +1018,46 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: None
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus, 3 ounce (pack of 1)
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 # trivial search & item, choose option
-stateact_prompt_ga = f"""{system_prompt_gpt4o}
+stateact_prompt_ga = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -865,12 +1071,14 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Search Results Page, page 1
 Current Selection: None
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -883,32 +1091,42 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 
 # trivial search & item, choose option
-stateact_prompt_gta = f"""{system_prompt_gpt4o}
+stateact_prompt_gta = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Thought: None
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -922,11 +1140,13 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Thought: B078GWRC1J and B078GTKVXY are bright citrus deodorant less then 50 dollars. I can check B078GWRC1J first.
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -939,33 +1159,43 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Thought: For 3 ounce bottle of bright citrus deodorant for sensitive skin, the item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Thought: None
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Thought: None
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 # trivial search & item, choose option
-stateact_prompt_ta2 = f"""{system_prompt_gpt4o}
+stateact_prompt_ta2 = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Thought: To solve the task I should search for a suitable product, browse the products for a good match, then select the most suitable and then make the correct selections and then buy it. I should start by searching for the 3 ounce bright citrus deodarant for sensitive skin.
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -979,10 +1209,12 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Thought: The search produced good results. B078GWRC1J is a bright citrus deodorant for sensitive skin for less then 50 dollars. I should check B078GWRC1J out.
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -995,33 +1227,43 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Thought: The item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Thought: None
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Thought: I have now selected all the required options. I should now buy the product.
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 # trivial search & item, choose option
-stateact_prompt_gssta2 = f"""{system_prompt_gpt4o}
+stateact_prompt_gssta2 = \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Search Home Page
 Current Selection: None
 Thought: To solve the task I should search for a suitable product, browse the products for a good match, then select the most suitable and then make the correct selections and then buy it. I should start by searching for the 3 ounce bright citrus deodarant for sensitive skin.
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -1035,13 +1277,15 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Search Results Page, page 1
 Current Selection: None
 Thought: The search produced good results. B078GWRC1J is a bright citrus deodorant for sensitive skin for less then 50 dollars. I should check B078GWRC1J out.
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -1054,41 +1298,51 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: None
 Thought: The item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus
 Thought: None
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Goal: Buy a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus, 3 ounce (pack of 1)
 Thought: I have now selected all the required options. I should now buy the product.
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 # trivial search & item, choose option
-stateact_prompt_ssta2 = f"""{system_prompt_gpt4o}
+stateact_prompt_ssta2 =  \
+f"""{system_prompt_gpt4o}
 Instruction:  
 i would like a 3 ounce bottle of bright citrus deodorant for sensitive skin, and price lower than 50.00 dollars 
 [Search]  
-
+{END}
+{START}
 Current Location: Search Home Page
 Current Selection: None
 Thought: To solve the task I should search for a suitable product, browse the products for a good match, then select the most suitable and then make the correct selections and then buy it. I should start by searching for the 3 ounce bright citrus deodarant for sensitive skin.
 Action: search[3 ounce bright citrus deodorant sensitive skin]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 Page 1 (Total results: 50) 
@@ -1102,12 +1356,14 @@ $10.99
 [B08KBVJ4XN] 
 Barrel and Oak - Aluminum-Free Deodorant, Deodorant for Men, Essential Oil-Based Scent, 24-Hour Odor Protection, Cedar & Patchouli Blend, Gentle on Sensitive Skin (Mountain Sage, 2.7 oz, 2-Pack) 
 $15.95  
-
+{END}
+{START}
 Current Location: Search Results Page, page 1
 Current Selection: None
 Thought: The search produced good results. B078GWRC1J is a bright citrus deodorant for sensitive skin for less then 50 dollars. I should check B078GWRC1J out.
 Action: click[B078GWRC1J]
-
+{END}
+{START}
 Observation: 
 [Back to Search] 
 [< Prev] 
@@ -1120,40 +1376,53 @@ Rating: N.A.
 [Features] 
 [Reviews] 
 [Buy Now]  
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Current Selection: None
 Thought: The item has options 'bright citrus' and '3 ounce (pack of 1)' and seems good to buy.
 Action: click[bright citrus]
-
+{END}
+{START}
 Observation: You have clicked bright citrus. 
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus
 Thought: None
 Action: click[3 ounce (pack of 1)]
-
+{END}
+{START}
 Observation: You have clicked 3 ounce (pack of 1). 
-
+{END}
+{START}
 Current Location: Item B078GWRC1J Page
 Current Selection: bright citrus, 3 ounce (pack of 1)
 Thought: I have now selected all the required options. I should now buy the product.
 Action: click[Buy Now]
+{END}
+{OUTRO}
 """
 
 # In[5]:
 
-def extract_action(action):
+def extract_action(action, debug=False):
   """extracts action."""
   SEP = "Action:"
   actual_action = action
   if SEP in action:
-    actual_action = action.split(SEP)[-1].lstrip()
+    actual_action = action.split(SEP)[-1].lstrip().rstrip()
+  if debug:
+    print("Debug:")
+    for idx,c in enumerate(actual_action):
+      print(f"""{idx}:{c}""")
+
+    input()
 
   return actual_action
 
 
-def webshop_run(idx, prompt, to_print=True, state=None, max_steps=15):
+def webshop_run(idx, prompt, to_print=False, state=None, max_steps=15, debug=False):
   if state:
     print(f"STATE is TRUE:{state}")
   else:
@@ -1161,6 +1430,8 @@ def webshop_run(idx, prompt, to_print=True, state=None, max_steps=15):
   action = 'reset'
   actual_action = action
   init_prompt = prompt
+  # print("==init prompt==")
+  # print(init_prompt)
   prompt = ''
   step_count = 0
   for i in range(max_steps):
@@ -1183,47 +1454,33 @@ def webshop_run(idx, prompt, to_print=True, state=None, max_steps=15):
       print(observation)
       print()
       sys.stdout.flush()
+      if debug:
+        input()
     # if to_print:
     #   print(f'{action}\nObservation: {observation}\n')
     #   sys.stdout.flush()
+
     if i:
-      # prompt += f' {action}\nObservation: {observation}\n\nAction:'
-      if state:
-        prompt += f'{action}\n\nObservation: {observation}\n\n'
-      else:
-        prompt += f' {action}\nObservation: {observation}\n\nAction:'
+      prompt += f'\n{action}\n{END}\n{START}\nObservation:{observation}\n{END}'
 
     else:
-      if state:
-        prompt += f'{observation}\n\n{state}:'
+      prompt += f'{START}{observation}\n{END}'
 
-      else:
-        prompt += f'{observation}\n\nAction:'
-        # prompt += f'{observation}\n\n'
-    
     if res[2]:  
       return res[1], step_count
 
-    if state:
-      # action = llm_chat(init_prompt + prompt[-(6400-len(init_prompt)):], stop=['\n\n']).lstrip(' ')
-      action = call_llm(init_prompt + prompt[-(MAX_PROMPT_LENGTH-len(init_prompt)):], stop=['\n\n']).lstrip(' ')
-      # action = call_llm(init_prompt + prompt, stop=['\n\n']).lstrip(' ')
+    action = call_llm(init_prompt + prompt[-(MAX_PROMPT_LENGTH-len(init_prompt)):], stop=[END])
+    # action = llm_chat(init_prompt + prompt, stop=[END])
 
-    else:
-      # action = llm_chat(init_prompt + prompt[-(6400-len(init_prompt)):], stop=['\n']).lstrip(' ')
-      action = call_llm(init_prompt + prompt[-(MAX_PROMPT_LENGTH-len(init_prompt)):], stop=['\n']).lstrip(' ')
-      # action = call_llm(init_prompt + prompt, stop=['\n']).lstrip(' ')
 
 
     if state:
-      actual_action = extract_action(action)
-    elif "Action:" in actual_action:
-      actual_action = extract_action(action)
+      actual_action = extract_action(action, debug=debug)
+    elif "Action:" in action:
+      actual_action = extract_action(action, debug=debug)
     else:
+      print("Action was not extracted")
       actual_action = action
-
-    print(f"=====\nPrompt is:{prompt}\n======")
-
 
   return 0, step_count
 
@@ -1253,15 +1510,21 @@ def run_episodes(prompt, n=50, s=0, state=None, max_steps=15):
 
 # In[6]:
 import time
-s=0
+s=1
 N=30
 MS = 15
  
-experiments_to_run = ["act","react","stateact","stateact-no-thoughts"]
+# experiments_to_run = ["act","react","stateact","stateact-no-thoughts"]
+# experiments_to_run = ["act"]
 experiments_to_run = ["react"]
 # experiments_to_run = ["stateact"]
 # experiments_to_run = ["stateact-no-thoughts"]
+# experiments_to_run = ["ssa"]
+# experiments_to_run = ["stateact2"]
 
+# experiments_to_run = ["stateact2","ssa","react","stateact","stateact-no-thoughts"]
+
+# experiments_to_run = ["stateact2"]
 
 # starting price 33.11
 # [0, 0.6666666666666666, 0.5, 0.75, 1.0, 0, 0.6666666666666666, 0.6666666666666666, 0.6666666666666666, 0.5]
@@ -1336,7 +1599,7 @@ if "ta" in experiments_to_run:
   print(steps5)
   print(sum(steps5)/len(steps5))
 
-if "ta" in experiments_to_run:
+if "stateact" in experiments_to_run:
   t6s = time.localtime()
   res6, sc6 , steps6 = run_episodes(stateact_prompt_gssta, N, s=s, state="Goal", max_steps=MS)
   t6e = time.localtime()
@@ -1346,7 +1609,7 @@ if "ta" in experiments_to_run:
   print(steps6)
   print(sum(steps6)/len(steps6))
 
-if "ta" in experiments_to_run:
+if "ssa" in experiments_to_run:
   t7s = time.localtime()
   res7, sc7 , steps7 = run_episodes(stateact_prompt_ssa, N, s=s, state="Current Location", max_steps=MS)
   t7e = time.localtime()
@@ -1366,7 +1629,7 @@ if "ta" in experiments_to_run:
   print(steps8)
   print(sum(steps8)/len(steps8))
 
-if "ta" in experiments_to_run:
+if "stateact-no-thoughts" in experiments_to_run:
   t9s = time.localtime()
   res9, sc9 , steps9 = run_episodes(stateact_prompt_gssa, N, s=s, state="Goal", max_steps=MS)
   t9e = time.localtime()
@@ -1406,7 +1669,7 @@ if "ta" in experiments_to_run:
   print(steps12)
   print(sum(steps12)/len(steps12))
 
-if "stateact" in experiments_to_run:
+if "stateact2" in experiments_to_run:
   t13s = time.localtime()
   res13, sc13 , steps13 = run_episodes(stateact_prompt_gssta2, N, s=s, state="Goal", max_steps=MS)
   t13e = time.localtime()
@@ -1416,7 +1679,7 @@ if "stateact" in experiments_to_run:
   print(steps13)
   print(sum(steps13)/len(steps13))
 
-if "stateact-no-thoughts" in experiments_to_run:
+if "ta" in experiments_to_run:
   t14s = time.localtime()
   res14, sc14 , steps14 = run_episodes(stateact_prompt_ssta2, N, s=s, state="Current Location", max_steps=MS)
   t14e = time.localtime()
@@ -1488,7 +1751,7 @@ if "ta" in experiments_to_run:
   print(steps5)
   print(sum(steps5)/len(steps5))
 
-if "ta" in experiments_to_run:
+if "stateact" in experiments_to_run:
   print('=====================6-gssta')
   print(res6)
   print(sc6)
@@ -1497,8 +1760,8 @@ if "ta" in experiments_to_run:
   print(steps6)
   print(sum(steps6)/len(steps6))
 
-if "ta" in experiments_to_run:
-  print('=====================7')
+if "ssa" in experiments_to_run:
+  print('=====================7-ssa')
   print(res7)
   print(sc7)
   print(t7s)
@@ -1515,7 +1778,7 @@ if "ta" in experiments_to_run:
   print(steps8)
   print(sum(steps8)/len(steps8))
 
-if "ta" in experiments_to_run:
+if "stateact-no-thoughts" in experiments_to_run:
   print('=====================9-gssa')
   print(res9)
   print(sc9)
@@ -1551,7 +1814,7 @@ if "ta" in experiments_to_run:
   print(steps12)
   print(sum(steps12)/len(steps12))
 
-if "stateact" in experiments_to_run:
+if "stateact2" in experiments_to_run:
   print('=====================13-gssta2')
   print(res13)
   print(sc13)
@@ -1560,7 +1823,7 @@ if "stateact" in experiments_to_run:
   print(steps13)
   print(sum(steps13)/len(steps13))
 
-if "stateact-no-thoughts" in experiments_to_run:
+if "ta" in experiments_to_run:
   print('=====================14-ssta2')
   print(res14)
   print(sc14)
