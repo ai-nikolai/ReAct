@@ -13,19 +13,18 @@ import sys
 
 USE_GPT = True
 
-GPT_MODEL = "gpt-3.5-turbo-1106"
-
-# GPT_MODEL = "gpt-3.5-turbo-instruct"
+GPT_MODEL = "gpt-3.5-turbo-instruct"
 LLM_TYPE="NORMAL"
 
+# GPT_MODEL = "gpt-3.5-turbo-1106"
 # GPT_MODEL = "gpt-4-0613"
-LLM_TYPE="CHAT"
+# GPT_MODEL = "gpt-3.5-turbo"
+# LLM_TYPE="CHAT"
 
 MAX_PROMPT_LENGTH=6400
 
 
 CLAUDE_MODEL="claude-3-5-sonnet-latest"
-
 
 # LLM_TYPE="CHAT"
 # GPT_MODEL = "gpt-3.5-turbo-1106"
@@ -1510,7 +1509,7 @@ def run_episodes(prompt, n=50, s=0, state=None, max_steps=15):
 
 # In[6]:
 import time
-s=1
+s=0
 N=30
 MS = 15
  
@@ -1520,7 +1519,7 @@ experiments_to_run = ["react"]
 # experiments_to_run = ["stateact"]
 # experiments_to_run = ["stateact-no-thoughts"]
 # experiments_to_run = ["ssa"]
-# experiments_to_run = ["stateact2"]
+experiments_to_run = ["stateact2"]
 
 # experiments_to_run = ["stateact2","ssa","react","stateact","stateact-no-thoughts"]
 
