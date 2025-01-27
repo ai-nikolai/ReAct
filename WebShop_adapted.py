@@ -1510,16 +1510,17 @@ def run_episodes(prompt, n=50, s=0, state=None, max_steps=15):
 # In[6]:
 import time
 s=0
-N=30
+N=100
 MS = 15
  
-# experiments_to_run = ["act","react","stateact","stateact-no-thoughts"]
+experiments_to_run = ["act","react","stateact","stateact-no-thoughts","stateact-no-goal","stateact-no-state"]
 # experiments_to_run = ["act"]
-experiments_to_run = ["react"]
+# experiments_to_run = ["react"]
 # experiments_to_run = ["stateact"]
 # experiments_to_run = ["stateact-no-thoughts"]
 # experiments_to_run = ["ssa"]
 experiments_to_run = ["stateact2"]
+experiments_to_run = ["gsta"]
 
 # experiments_to_run = ["stateact2","ssa","react","stateact","stateact-no-thoughts"]
 
@@ -1568,7 +1569,7 @@ if "ta" in experiments_to_run:
   print(steps2)
   print(sum(steps2)/len(steps2))
 
-if "ta" in experiments_to_run:
+if "gsta" in experiments_to_run:
   t3s = time.localtime()
   res3, sc3 , steps3 = run_episodes(stateact_prompt_gsta, N, s=s, state="Goal", max_steps=MS)
   t3e = time.localtime()
@@ -1588,7 +1589,7 @@ if "ta" in experiments_to_run:
   print(steps4)
   print(sum(steps4)/len(steps4))
 
-if "ta" in experiments_to_run:
+if "stateact-no-goal" in experiments_to_run:
   t5s = time.localtime()
   res5, sc5 , steps5 = run_episodes(stateact_prompt_ssta, N, s=s, state="Current Location", max_steps=MS)
   t5e = time.localtime()
@@ -1648,7 +1649,7 @@ if "ta" in experiments_to_run:
   print(steps10)
   print(sum(steps10)/len(steps10))
 
-if "ta" in experiments_to_run:
+if "stateact-no-state" in experiments_to_run:
   t11s = time.localtime()
   res11, sc11 , steps11 = run_episodes(stateact_prompt_gta, N, s=s, state="Goal", max_steps=MS)
   t11e = time.localtime()
@@ -1678,7 +1679,7 @@ if "stateact2" in experiments_to_run:
   print(steps13)
   print(sum(steps13)/len(steps13))
 
-if "ta" in experiments_to_run:
+if "no-goal-stateact2" in experiments_to_run:
   t14s = time.localtime()
   res14, sc14 , steps14 = run_episodes(stateact_prompt_ssta2, N, s=s, state="Current Location", max_steps=MS)
   t14e = time.localtime()
@@ -1723,7 +1724,7 @@ if "ta" in experiments_to_run:
   print(steps2)
   print(sum(steps2)/len(steps2))
 
-if "ta" in experiments_to_run:
+if "gsta" in experiments_to_run:
   print('=====================3')
   print(res3)
   print(sc3)
@@ -1741,7 +1742,7 @@ if "ta" in experiments_to_run:
   print(steps4)
   print(sum(steps4)/len(steps4))
 
-if "ta" in experiments_to_run:
+if "stateact-no-goal" in experiments_to_run:
   print('=====================5-ssta')
   print(res5)
   print(sc5)
@@ -1795,7 +1796,7 @@ if "ta" in experiments_to_run:
   print(steps10)
   print(sum(steps10)/len(steps10))
 
-if "ta" in experiments_to_run:
+if "stateact-no-state" in experiments_to_run:
   print('=====================11-gta')
   print(res11)
   print(sc11)
