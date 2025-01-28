@@ -16,6 +16,7 @@ USE_GPT = True
 GPT_MODEL = "gpt-3.5-turbo-instruct"
 LLM_TYPE="NORMAL"
 
+# GPT_MODEL = "gpt-3.5-turbo-0125"
 # GPT_MODEL = "gpt-3.5-turbo-1106"
 # GPT_MODEL = "gpt-4-0613"
 # GPT_MODEL = "gpt-3.5-turbo"
@@ -1510,17 +1511,17 @@ def run_episodes(prompt, n=50, s=0, state=None, max_steps=15):
 # In[6]:
 import time
 s=0
-N=100
+N=30
 MS = 15
  
 experiments_to_run = ["act","react","stateact","stateact-no-thoughts","stateact-no-goal","stateact-no-state"]
 # experiments_to_run = ["act"]
-# experiments_to_run = ["react"]
+experiments_to_run = ["react"]
 # experiments_to_run = ["stateact"]
 # experiments_to_run = ["stateact-no-thoughts"]
 # experiments_to_run = ["ssa"]
-experiments_to_run = ["stateact2"]
-experiments_to_run = ["gsta"]
+# experiments_to_run = ["stateact2"]
+# experiments_to_run = ["gsta"]
 
 # experiments_to_run = ["stateact2","ssa","react","stateact","stateact-no-thoughts"]
 
